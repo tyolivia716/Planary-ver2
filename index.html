@@ -813,10 +813,33 @@ body::before{
                       </a>
                     </div>
 
-                    <div class="mt-3" v-if="it.image">
-                      <img :src="it.image" class="w-full max-h-56 object-cover rounded-2xl border"
-                           style="border-color: var(--line);" />
-                    </div>
+                    <!-- ✅ 收藏：多圖縮圖 + 點擊預覽 -->
+<div class="mt-3" v-if="(it.images||[]).length">
+  <div class="grid grid-cols-4 gap-2">
+    <button
+      v-for="(im,idx) in it.images"
+      :key="'favim-'+it.id+'-'+im.id"
+      type="button"
+      class="rounded-2xl overflow-hidden border bg-white/60"
+      style="border-color: var(--line);"
+      @click="openFavPreview(it.images, idx)"
+      title="點擊預覽"
+    >
+      <img
+        :src="im.dataUrl"
+        class="w-full h-20 object-cover"
+        alt=""
+      />
+    </button>
+  </div>
+</div>
+
+<!-- ✅ 相容舊資料：只有 it.image 時也先顯示 -->
+<div class="mt-3" v-else-if="it.image">
+  <img :src="it.image" class="w-full max-h-56 object-cover rounded-2xl border"
+       style="border-color: var(--line);" />
+</div>
+
                   </div>
 
                   <div class="flex flex-col gap-2 shrink-0">
@@ -1863,27 +1886,65 @@ body::before{
           <textarea class="input rounded-2xl px-3 py-2 text-[13px] w-full min-h-[90px]"
                     v-model="editor.data.note" placeholder="備註（可空）"></textarea>
 
-          <div class="rounded-3xl p-4 bg-white/70 border" style="border-color: var(--line);">
-            <div class="font-semibold">🖼️ 圖片（可空）</div>
-            <input class="mt-2 text-[13px]" type="file" accept="image/*" @change="onPickSingleImageToEditor($event)">
-            <div class="mt-3" v-if="editor.data.image">
-  <div class="relative">
-    <img :src="editor.data.image"
-         class="w-full max-h-56 object-cover rounded-2xl border"
-         style="border-color: var(--line);" />
+          <!-- ✅ 圖片區：fav 多張 / 其他維持單張 -->
+<div class="rounded-3xl p-4 bg-white/70 border" style="border-color: var(--line);">
 
-    <!-- ✅ 移除照片 -->
-    <button type="button"
-            class="absolute top-2 right-2 w-10 h-10 rounded-2xl bg-white/85 border shadow-soft grid place-items-center"
-            style="border-color: var(--line); color:#ef4444;"
-            @click="editor.data.image='';">
-      ✖
-    </button>
-  </div>
+  <!-- ⭐ 收藏 fav：多張 -->
+  <template v-if="editor.type==='fav'">
+    <div class="font-semibold">🖼️ 圖片（可多張）</div>
+    <input class="mt-2 text-[13px]" type="file" accept="image/*" multiple
+           @change="onPickFavImages($event)">
+
+    <div class="mt-3 grid grid-cols-3 gap-2" v-if="(editor.data.images||[]).length">
+      <div v-for="(img,idx) in editor.data.images"
+           :key="'fimg-'+img.id"
+           class="relative">
+        <button type="button"
+                class="block w-full"
+                @click="openShopListPreview(editor.data.images, idx)">
+          <img :src="img.dataUrl"
+               class="w-full aspect-square object-cover rounded-2xl border"
+               style="border-color: var(--line);" />
+        </button>
+
+        <button type="button"
+                class="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-white border shadow-soft grid place-items-center"
+                style="border-color: var(--line);"
+                @click="removeFavImage(img.id)">
+          ✖
+        </button>
+      </div>
+    </div>
+
+    <div v-else class="text-[12px] hint mt-2">
+      還沒加圖片～可選多張
+    </div>
+  </template>
+
+  <!-- 🧾 其他類型（plan / note / shop 等）：維持單張 -->
+  <template v-else>
+    <div class="font-semibold">🖼️ 圖片（可空）</div>
+    <input class="mt-2 text-[13px]" type="file" accept="image/*"
+           @change="onPickSingleImageToEditor($event)">
+
+    <div class="mt-3" v-if="editor.data.image">
+      <div class="relative">
+        <img :src="editor.data.image"
+             class="w-full max-h-56 object-cover rounded-2xl border"
+             style="border-color: var(--line);" />
+        <button type="button"
+                class="absolute top-2 right-2 w-10 h-10 rounded-2xl bg-white/85 border shadow-soft grid place-items-center"
+                style="border-color: var(--line); color:#ef4444;"
+                @click="editor.data.image='';">
+          ✖
+        </button>
+      </div>
+    </div>
+  </template>
+
 </div>
-          </div>
-        </template>
 
+</template>
         <!-- luggage add -->
         <template v-if="editor.type==='luggage'">
           <input class="input rounded-2xl px-3 py-2 text-[13px]" v-model="editor.data.category" placeholder="分類（例 必需品/藥品…）">
@@ -3272,40 +3333,31 @@ openRateLink(){
     console.error(e);
   }
 },
+openFavPreview(images, idx=0){
+  // 直接共用 shopListPreview modal
+  this.openShopListPreview(images, idx);
+},
 
     // ---------- fav ----------
     openAddFav(){
       this.editor = {
         open:true, type:"fav", title:"➕ 新增收藏", mode:"new", refId:"",
-        data:{ id:this.uid(), category:"", area:"未分類地區", name:"", price:null, currency:"KRW", qty:1, place:"", buyer:"", links:[], image:"", note:"" }
+        data:{ id:this.uid(), category:"", area:"未分類地區", name:"", price:null, currency:"KRW", qty:1, place:"", buyer:"", links:[], images:[], note:"" }
       };
     },
-  editFav(it){
-  // 1️⃣先複製一份資料（避免直接改到原資料）
+ editFav(it){
   const copy = JSON.parse(JSON.stringify(it));
 
-  // 2️⃣ 如果沒有 links，就先補一個空陣列
-  if(!Array.isArray(copy.links)){
-    copy.links = [];
+  // links 保底（你本來就有）
+  if(!Array.isArray(copy.links)) copy.links = [];
+
+  // ✅ images 保底 + 舊 image 轉入
+  if(!Array.isArray(copy.images)) copy.images = [];
+  if(copy.image && typeof copy.image==="string" && copy.image.trim()){
+    copy.images.unshift({ id:this.uid(), dataUrl: copy.image });
   }
+  delete copy.image;
 
-  // 3️⃣如果是舊資料（只有 link，沒有 links）
-  if(copy.link && typeof copy.link === "string"){
-    const oldUrl = copy.link.trim();
-
-    // 有舊網址才轉
-    if(oldUrl){
-      copy.links.push({
-        label: "",     // 名稱先空白
-        url: oldUrl    // 舊網址放進來
-      });
-    }
-
-    // 4️⃣ 刪掉舊欄位，避免之後混亂
-    delete copy.link;
-  }
-
-  // 5️⃣ 打開編輯視窗
   this.editor = {
     open:true,
     type:"fav",
@@ -3314,6 +3366,25 @@ openRateLink(){
     refId: it.id,
     data: copy
   };
+},
+
+// ✅ fav 多圖：選圖（壓縮後存 dataUrl）
+async onPickFavImages(ev){
+  const files = Array.from(ev.target.files || []);
+  if(!files.length) return;
+
+  this.editor.data.images ||= [];
+
+  for(const f of files){
+    const dataUrl = await this.fileToJpegDataURL(f, 1200, 0.82);
+    this.editor.data.images.push({ id: this.uid(), dataUrl });
+  }
+
+  ev.target.value = "";
+},
+
+removeFavImage(imgId){
+  this.editor.data.images = (this.editor.data.images||[]).filter(x=>x.id!==imgId);
 },
 
 
@@ -3615,6 +3686,13 @@ if(t==="infoBlock"){
 data.links = (data.links||[])
   .map(x=>({ label:(x.label||""), url:(x.url||"").trim() }))
   .filter(x=>x.url);
+// ✅ fav images 保底 + 舊 image 轉入（如果有人舊資料還是 image 字段）
+data.images ||= [];
+if(data.image && typeof data.image === "string" && data.image.trim()){
+  data.images.unshift({ id: this.uid(), dataUrl: data.image });
+}
+delete data.image;
+
         if(this.editor.mode==="new"){
           this.activeTrip.fav.unshift(data);
         }else{
