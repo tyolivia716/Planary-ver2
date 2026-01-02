@@ -879,11 +879,11 @@ body::before{
 
             <div class="flex items-start gap-3">
               <!-- 勾選 -->
-              <button class="mt-1 w-7 h-7 rounded-2xl border bg-white/70 flex items-center justify-center shrink-0"
-                      style="border-color: var(--line);"
-                      @click="toggleShopListDone(it)">
-                <span v-if="it.done">✅</span>
-              </button>
+              <input
+  type="checkbox"
+  v-model="it.done"
+  class="mt-1 w-7 h-7 shrink-0 accent-blue-500 cursor-pointer"
+/>
 
               <div class="flex-1 min-w-0">
                 <!-- 名稱 -->
@@ -2713,11 +2713,22 @@ applyTripBackground(){
 async onPickTripBackground(ev){
   const f = (ev.target.files || [])[0];
   if(!f) return;
-  const src = await this.readFileAsDataURL(f);
-  this.activeTrip.bgPhoto = src;
-  this.persist();
-  this.applyTripBackground();
-  ev.target.value = "";
+
+  try{
+    // ✅ 先壓縮成較小的 JPEG DataURL
+    const src = await this.compressImageToDataURL(f, {
+      maxWidth: 1600,
+      maxBytes: 450 * 1024
+    });
+
+    this.activeTrip.bgPhoto = src;
+    this.persist();
+    this.applyTripBackground();
+  }catch(e){
+    console.error(e);
+  }finally{
+    ev.target.value = "";
+  }
 },
 
 removeTripBackground(){
@@ -2733,7 +2744,7 @@ removeTripBackground(){
     if(this.activeTripId) localStorage.setItem("tripbook_activeTripId_v2", this.activeTripId);
   }catch(e){
     console.error(e);
-    alert("⚠️ 儲存失敗：可能是照片太大導致瀏覽器儲存空間不足。\n建議：移除照片 / 改用較小圖片 / 或我可以幫你加自動壓縮。");
+    console.warn("儲存失敗（可能空間不足）", e);
     // 不中斷畫面操作（至少不會卡住）
   }
 },
@@ -3722,6 +3733,48 @@ delete data.image;
         fr.readAsDataURL(file);
       });
     },
+// ✅ 將圖片轉成 JPEG DataURL，並自動縮尺寸+降品質到指定大小內
+async fileToJpegDataURL(file, maxW = 1600, qualityStart = 0.82, maxBytes = 450*1024){
+  const src = await this.readFileAsDataURL(file);
+
+  const img = await new Promise((resolve, reject)=>{
+    const i = new Image();
+    i.onload = ()=> resolve(i);
+    i.onerror = reject;
+    i.src = src;
+  });
+
+  // 等比縮放
+  let w = img.width, h = img.height;
+  if (w > maxW) {
+    h = Math.round(h * (maxW / w));
+    w = maxW;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext("2d", { alpha: false });
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const estBytes = (dataUrl) => {
+    const b64 = (dataUrl.split(",")[1] || "");
+    return Math.floor(b64.length * 3 / 4);
+  };
+
+  let q = qualityStart;
+  let out = canvas.toDataURL("image/jpeg", q);
+
+  // 逐步降品質直到小於 maxBytes（或降到下限）
+  while (estBytes(out) > maxBytes && q > 0.55) {
+    q = Math.max(0.55, q - 0.07);
+    out = canvas.toDataURL("image/jpeg", q);
+  }
+
+  return out;
+},
+
     async onAddImagesToEditor(ev){
       const files = Array.from(ev.target.files||[]);
       if(!files.length) return;
